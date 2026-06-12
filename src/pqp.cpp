@@ -1,8 +1,10 @@
 #include <bits/stdc++.h>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <sys/ucontext.h>
 
 #define MAX_CODE_BLOCK_SIZE 4 * 1024
@@ -11,56 +13,60 @@
     std::setfill(' ') << std::setw(8) << std::dec \
     << (c) << ':' << std::setfill('0') << std::setw(4) << std::hex << (addr) << ':' << std::dec
 
-#define PRINT_MOVI(c, addr, rx, i) \
+#define PRINT_MOVI(rx, i) \
     "mov_r" << (int) (rx) << ',' << std::hex << std::setfill('0') << std::setw(8) << (int) (i)
 
-#define PRINT_MOVR(c, addr, rx, ry) \
+#define PRINT_MOVR(rx, ry) \
     "mov_r" << (int) (rx) << ",r" << (int) (ry)
 
-#define PRINT_MOVRM(c, addr, rx, ry) \
+#define PRINT_MOVRM(rx, ry) \
     "mov_r" << (int) (rx) << ",[r" << (int) (ry) << ']'
 
-#define PRINT_MOVMR(c, addr, rx, ry) \
+#define PRINT_MOVMR(rx, ry) \
     "mov_[r" << (int) (rx) << "],r" << (int) (ry)
 
-#define PRINT_CMP(c, addr, rx, ry) \
+#define PRINT_CMP(rx, ry) \
     "cmp_r" << (int) (rx) << "<=>r" << (int) (ry)
 
-#define PRINT_JMP(c, addr, jmp) \
+#define PRINT_JMP(jmp) \
     "jmp_" << std::hex << std::setfill('0') << std::setw(4) << (uint16_t)(jmp)
 
-#define PRINT_JG(c, addr, jmp) \
+#define PRINT_JG(jmp) \
     "jg_" << std::hex << std::setfill('0') << std::setw(4) << (uint16_t)(jmp)
 
-#define PRINT_JL(c, addr, jmp) \
+#define PRINT_JL(jmp) \
     "jl_" << std::hex << std::setfill('0') << std::setw(4) << (uint16_t)(jmp)
 
-#define PRINT_JE(c, addr, jmp) \
+#define PRINT_JE(jmp) \
     "je_" << std::hex << std::setfill('0') << std::setw(4) << (uint16_t)(jmp)
 
-#define PRINT_ADD(c, addr, rx, ry) \
+#define PRINT_ADD(rx, ry) \
      "add_r" << (int) (rx) << "+=r" << (int) (ry)
 
-#define PRINT_SUB(c, addr, rx, ry) \
+#define PRINT_SUB(rx, ry) \
      "sub_r" << (int) (rx) << "-=r" << (int) (ry)
 
-#define PRINT_AND(c, addr, rx, ry) \
+#define PRINT_AND(rx, ry) \
      "and_r" << (int) (rx) << "&=r" << (int) (ry)
 
-#define PRINT_OR(c, addr, rx, ry) \
+#define PRINT_OR(rx, ry) \
      "or_r" << (int) (rx) << "|=r" << (int) (ry)
 
-#define PRINT_XOR(c, addr, rx, ry) \
+#define PRINT_XOR(rx, ry) \
      "xor_r" << (int) (rx) << "^=r" << (int) (ry)
 
-#define PRINT_SAL(c, addr, rx, i) \
+#define PRINT_SAL(rx, i) \
      "sal_r" << (int) (rx) << "<<=" << (int) (i)
 
-#define PRINT_SAR(c, addr, rx, i) \
+#define PRINT_SAR(rx, i) \
      "sar_r" << (int) (rx) << ">>=" << (int) (i)
 
 #define PRINT_REG(rx)\
     'r' << std::dec << (rx) << '=' << std::hex << std::setfill('0') << std::setw(8)
+
+
+std::ifstream input_file;
+std::ofstream output_file;
 
 namespace PQP {
 
@@ -114,7 +120,7 @@ namespace PQP {
     uint8_t pqp_flags =   0;
     uint32_t PC       =   0;
 
-    std::map<uint32_t, std::pair<uint32_t, std::string>> mapped_instructions;
+    
 
     void load_memory (std::ifstream& input){
         uint8_t raw_instruction [4];
@@ -134,7 +140,7 @@ namespace PQP {
         }
         //memset(pqp_mem, 0, 256);
 
-        std::cout << "Loading PQP memory (256 Bytes)..." << std::endl;
+        //std::cout << "Loading PQP memory (256 Bytes)..." << std::endl;
         int i;
         for (i = 0; i < 256; i+=4){
             if (!get_raw_instruction(input, raw_instruction)) break;
@@ -148,7 +154,7 @@ namespace PQP {
             pqp_mem[i] = 0;
         }
 
-        std::cout << "Memory loaded! Address: 0x" << std::hex << (uint64_t) pqp_mem << std::endl;
+        //std::cout << "Memory loaded! Address: 0x" << std::hex << (uint64_t) pqp_mem << std::endl;
     }
 }
 
@@ -185,9 +191,10 @@ namespace JIT {
 
     std::vector<BlockMeta> block_metadata_table;
     std::unordered_map<uint32_t, uint8_t*> block_map;
+    std::map<uint32_t, std::string> mapped_instructions;
 
     template <PQP::OPCODE T>
-    size_t emmit_MOV (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
+    static inline size_t emmit_MOV (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
         size_t pos = 0;
 
         switch (T) {
@@ -259,7 +266,7 @@ namespace JIT {
 
     // Emissor unificado para operações lógicas e aritméticas (ADD, SUB, AND, OR, XOR, CMP)
     template <PQP::OPCODE OP>
-    size_t emmit_BINARY_OP (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
+    static inline size_t emmit_BINARY_OP (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
         size_t pos = 0;
 
         // Regra do REX para OP r/m32, r32 (Onde Rx é r/m32 e Ry é r32)
@@ -292,7 +299,7 @@ namespace JIT {
 
     // Emissor unificado para operações de deslocamento de bits (SAL, SAR)
     template <PQP::OPCODE OP>
-    size_t emmit_SHIFT_OP (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
+    static inline size_t emmit_SHIFT_OP (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
         size_t pos = 0;
 
         // O Rx é o destino e fica no campo R/M, logo controla o REX.B
@@ -317,7 +324,7 @@ namespace JIT {
         return pos;
     }
 
-    size_t emmit_raw_xorps_xmm0_xmm0 (uint8_t* gen_code){
+    static inline size_t emmit_raw_xorps_xmm0_xmm0 (uint8_t* gen_code){
         size_t pos = 0;
         //pxor xmm0, xmm0
         gen_code[pos++] = 0x0F;
@@ -327,7 +334,7 @@ namespace JIT {
         return pos;
     }
 
-    size_t emmit_raw_xorps_xmm1_xmm1 (uint8_t* gen_code){
+    static inline size_t emmit_raw_xorps_xmm1_xmm1 (uint8_t* gen_code){
         size_t pos = 0;
         // xorps xmm1, xmm1 -> Zera o xmm1 (Guest PC = 0)
         gen_code[pos++] = 0x0F;
@@ -337,7 +344,7 @@ namespace JIT {
         return pos;
     }
 
-    size_t emmit_raw_xmm2_constant1 (uint8_t* gen_code, uint32_t constant1){
+    static inline size_t emmit_raw_xmm2_constant1 (uint8_t* gen_code, uint32_t constant1){
         size_t pos = 0;
         //movd xmm2, dword ptr [addr]
 
@@ -352,7 +359,7 @@ namespace JIT {
         return pos;
     }
 
-    size_t emmit_raw_jmp_placeholder (uint8_t* gen_code){
+    static inline size_t emmit_raw_jmp_placeholder (uint8_t* gen_code){
         size_t pos = 0;
         gen_code[pos++] = 0xCC;
         uint32_t temp = 0x90909090;
@@ -362,7 +369,7 @@ namespace JIT {
     }
 
 
-    size_t emmit_raw_blockchanning_jmp (uint8_t* gen_code, int32_t offset){
+    static inline size_t emmit_raw_blockchanning_jmp (uint8_t* gen_code, int32_t offset){
         size_t pos = 0;
         gen_code[pos++] = 0xE9;
         *((uint32_t*) (&gen_code[pos])) = (uint32_t) offset;
@@ -370,7 +377,7 @@ namespace JIT {
         return pos;
     }
 
-    size_t emmit_raw_update_guest_pc(uint8_t* gen_code, uint32_t target_pc_address) {
+    static inline size_t emmit_raw_update_guest_pc(uint8_t* gen_code, uint32_t target_pc_address) {
         size_t pos = 0;
 
         // vmovd xmm1, dword ptr 
@@ -386,7 +393,7 @@ namespace JIT {
         return pos;
     }
 
-    size_t emmit_raw_block_header (uint8_t* gen_code, uint32_t counter_addr){
+    static inline size_t emmit_raw_block_header (uint8_t* gen_code, uint32_t counter_addr){
         size_t pos = 0;
 
         // --- PARTE 1: Atualiza o Guest PC ---
@@ -417,7 +424,7 @@ namespace JIT {
     }
 
     template <PQP::OPCODE OP>
-    size_t emmit_JMP_COND_OP (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
+    static inline size_t emmit_JMP_COND_OP (PQP::INSTRUCTION& instruction, uint8_t* gen_code){
         size_t pos = 0;
         gen_code[pos++] = 0x0F; 
         switch (OP) {
@@ -441,7 +448,7 @@ namespace JIT {
 
     }
     
-    std::string to_string(uint8_t* gen_code, size_t size) {
+    static inline std::string to_string(uint8_t* gen_code, size_t size) {
         std::ostringstream s;
         for (size_t i = 0; i < size; i++){
             s << "0x" << std::hex << std::setfill('0') << std::setw(2)
@@ -450,7 +457,7 @@ namespace JIT {
         return s.str();
     }
 
-    void print_memory_dump(const uint8_t* addr, size_t size) {
+    static inline void print_memory_dump(const uint8_t* addr, size_t size) {
         const size_t bytes_per_line = 32;
 
         // Configura o cout para imprimir em hexadecimal, com letras maiúsculas e preenchimento de zeros
@@ -477,25 +484,63 @@ namespace JIT {
         std::cout << std::dec << std::nouppercase;
     }
 
-    uint32_t get_new_counter_address() {
+    static inline uint32_t get_new_counter_address() {
         uint32_t* counter_ptr = &block_counters_arena[next_counter_index];
         next_counter_index++;
         
         return (uint32_t)(uintptr_t)counter_ptr;
     }
 
-    uint32_t get_pc_const_address(uint32_t current_pc) {
+    static inline uint32_t get_pc_const_address(uint32_t current_pc) {
         uint32_t* const_ptr = &pc_constants_arena[current_pc];
         
         return (uint32_t)(uintptr_t)const_ptr;
     }
 
-    uint8_t* interpreter (uint32_t guest_PC){
+    template <PQP::OPCODE OP>
+    static inline void write_interpretation (uint32_t PC, PQP::INSTRUCTION& i){
+
+        if (mapped_instructions.count(PC)) {
+            return;
+        }
+
+        uint32_t target = PC + (int32_t) i.i16 + 4;
+
+        std::stringstream s;
+        
+        switch (OP){
+            case PQP::OPCODE::MOVI:  s << PRINT_MOVI(i.Rx, i.i16); break;
+            case PQP::OPCODE::MOVR:  s << PRINT_MOVR(i.Rx, i.Ry); break;
+            case PQP::OPCODE::MOVRM: s << PRINT_MOVRM(i.Rx, i.Ry); break;
+            case PQP::OPCODE::MOVMR: s << PRINT_MOVMR(i.Rx, i.Ry); break;
+            case PQP::OPCODE::CMP:   s << PRINT_CMP(i.Rx, i.Ry); break;
+            case PQP::OPCODE::JMP:   s << PRINT_JMP(target); break;
+            case PQP::OPCODE::JG:    s << PRINT_JG(target); break;
+            case PQP::OPCODE::JL:    s << PRINT_JL(target); break;
+            case PQP::OPCODE::JE:    s << PRINT_JE(target); break;
+            case PQP::OPCODE::ADD:   s << PRINT_ADD(i.Rx, i.Ry); break;
+            case PQP::OPCODE::SUB:   s << PRINT_SUB(i.Rx, i.Ry); break;
+            case PQP::OPCODE::AND:   s << PRINT_AND(i.Rx, i.Ry); break;
+            case PQP::OPCODE::OR:    s << PRINT_OR(i.Rx, i.Ry); break;
+            case PQP::OPCODE::XOR:   s << PRINT_XOR(i.Rx, i.Ry); break;
+            case PQP::OPCODE::SAL:   s << PRINT_SAL(i.Rx, i.i5); break;
+            case PQP::OPCODE::SAR:   s << PRINT_SAR(i.Rx, i.i5); break;
+        }
+
+        mapped_instructions[PC] = s.str();
+        
+
+
+
+    }
+
+    static inline uint8_t* interpreter (uint32_t guest_PC){
 
         using namespace PQP;
         std::vector<uint8_t> code_block;
         uint32_t counter = 0;
 
+        
         uint32_t counter_pointer = get_new_counter_address();
         
         
@@ -508,7 +553,7 @@ namespace JIT {
 
         
         PC = guest_PC;
-        std::cout << guest_PC << std::endl;
+        //std::cout << guest_PC << std::endl;
         bool out = false;
         
         while (PC < 256 && !out){
@@ -517,87 +562,45 @@ namespace JIT {
             
             INSTRUCTION i (&pqp_mem[PC]);
             
-            switch (i.opcode) {
+           switch (i.opcode) {
                 case MOVI: {
                     size_t size = JIT::emmit_MOV<PQP::OPCODE::MOVI>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    }
-                    else{
-                        std::stringstream s;
-                        s << PRINT_MOVI(++pqp_addr_counter[PC], PC, i.Rx, i.i16);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "MOV_I: " << i_text << std::endl;
-                    }
-                    
+                    write_interpretation<MOVI>(PC, i);
+                    //std::cout << "MOV_I: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case MOVR: {
                     size_t size = JIT::emmit_MOV<PQP::OPCODE::MOVR>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_MOVR(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "MOV_R: " << i_text << std::endl;
-                    }
+                    write_interpretation<MOVR>(PC, i);
+                    //std::cout << "MOV_R_R: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case MOVRM: {
                     size_t size = JIT::emmit_MOV<PQP::OPCODE::MOVRM>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_MOVRM(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "MOV_R_M: " << i_text << std::endl;
-                    }
+                    write_interpretation<MOVRM>(PC, i);
+                    //std::cout << "MOV_R_M: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case MOVMR: {
                     size_t size = JIT::emmit_MOV<PQP::OPCODE::MOVMR>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_MOVMR(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "MOV_M_R: " << i_text << std::endl;
-                    }
+                    write_interpretation<MOVMR>(PC, i);
+                    //std::cout << "MOV_M_R: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case CMP: {
                     size_t size = JIT::emmit_BINARY_OP<PQP::CMP>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_CMP(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "CMP: " << i_text << std::endl;
-                    }
+                    write_interpretation<CMP>(PC, i);
+                    //std::cout << "CMP: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case JMP: {
-                    uint32_t tmp = PC;
-                    uint32_t target = tmp + (int32_t)i.i16 + 4;
+                    uint32_t target = PC + (int32_t)i.i16 + 4;
+                    
                     uint32_t target_const_address = get_pc_const_address(target);
 
                     size_t size = emmit_raw_update_guest_pc(raw_code, target_const_address);
@@ -606,22 +609,12 @@ namespace JIT {
                     size = emmit_raw_jmp_placeholder(raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
 
-                    
-                    if (mapped_instructions.count(tmp)) {
-                        mapped_instructions[tmp].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_JMP(++pqp_addr_counter[tmp], tmp, target);
-                        mapped_instructions[tmp] = {1, s.str()};
-                    }
-                    std::cout << PRINT_JMP(0, tmp, target) << std::endl;
+                    write_interpretation<JMP>(PC, i);
                     out = true;
                     break;
                 }
                 case JG: {
-                    uint32_t tmp = PC;
-                    uint32_t target = tmp + (int32_t)i.i16 + 4;
-
+                    uint32_t target = PC + (int32_t)i.i16 + 4;
                     uint32_t target_const_address = get_pc_const_address(target);
                     uint32_t PC_const_address = get_pc_const_address(PC+4);
 
@@ -640,24 +633,13 @@ namespace JIT {
                     size = emmit_raw_jmp_placeholder(raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
                     
-                    if (pqp_flags & 0b010) PC += (int32_t) i.i16;
-                    if (mapped_instructions.count(tmp)) {
-                        mapped_instructions[tmp].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_JG(++pqp_addr_counter[tmp], tmp, target);
-                        mapped_instructions[tmp] = {1, s.str()};
-                    }
-
+                    write_interpretation<JG>(PC, i);
                     
-                    std::cout << PRINT_JG(0, tmp, target) << std::endl;
                     out = true;
                     break;
                 }
                 case JL: {
-                    uint32_t tmp = PC;
-                    uint32_t target = tmp + (int32_t)i.i16 + 4;
-
+                    uint32_t target = PC + (int32_t)i.i16 + 4;
                     uint32_t target_const_address = get_pc_const_address(target);
                     uint32_t PC_const_address = get_pc_const_address(PC+4);
 
@@ -675,22 +657,14 @@ namespace JIT {
 
                     size = emmit_raw_jmp_placeholder(raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-                    if (pqp_flags & 0b001) PC += (int32_t) i.i16;
-                    if (mapped_instructions.count(tmp)) {
-                        mapped_instructions[tmp].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_JL(++pqp_addr_counter[tmp], tmp, target);
-                        mapped_instructions[tmp] = {1, s.str()};
-                    }
-                    std::cout << PRINT_JL(0, tmp, target) << std::endl;
+                    
+                    write_interpretation<JL>(PC, i);
+                    
                     out = true;
                     break;
                 }
                 case JE: {
-                    uint32_t tmp = PC;
-                    uint32_t target = tmp + (int32_t)i.i16 + 4;
-
+                    uint32_t target = PC + (int32_t)i.i16 + 4;
                     uint32_t target_const_address = get_pc_const_address(target);
                     uint32_t PC_const_address = get_pc_const_address(PC+4);
 
@@ -709,126 +683,60 @@ namespace JIT {
                     size = emmit_raw_jmp_placeholder(raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
 
-                    if (pqp_flags & 0b100) PC += (int32_t) i.i16;
-                    if (mapped_instructions.count(tmp)) {
-                        mapped_instructions[tmp].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_JE(++pqp_addr_counter[tmp], tmp, target);
-                        mapped_instructions[tmp] = {1, s.str()};
-                    }
-                    std::cout << PRINT_JE(0, tmp, target) << std::endl;
-                    out = true;
-        
+                    write_interpretation<JE>(PC, i);
                     
+                    out = true;
                     break;
                 }
                 case ADD: {
                     size_t size = JIT::emmit_BINARY_OP<PQP::ADD>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_ADD(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "ADD: " << i_text << std::endl;
-                    }
+                    write_interpretation<ADD>(PC, i);
+                    //std::cout << "ADD: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case SUB: {
                     size_t size = JIT::emmit_BINARY_OP<PQP::SUB>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_SUB(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "SUB: " << i_text << std::endl;
-                    }
+                    write_interpretation<SUB>(PC, i);
+                    //std::cout << "SUB: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case AND: {
                     size_t size = JIT::emmit_BINARY_OP<PQP::AND>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_AND(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "AND: " << i_text << std::endl;
-                    }
+                    write_interpretation<AND>(PC, i);
+                    //std::cout << "AND: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case OR: {
                     size_t size = JIT::emmit_BINARY_OP<PQP::OR>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_OR(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "OR: " << i_text << std::endl;
-                    }
+                    write_interpretation<OR>(PC, i);
+                    //std::cout << "OR: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case XOR: {
                     size_t size = JIT::emmit_BINARY_OP<PQP::XOR>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_XOR(++pqp_addr_counter[PC], PC, i.Rx, i.Ry);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "XOR: " << i_text << std::endl;
-                    }
+                    write_interpretation<XOR>(PC, i);
+                    //std::cout << "XOR: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case SAL: {
                     size_t size = JIT::emmit_SHIFT_OP<PQP::SAL>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_SAL(++pqp_addr_counter[PC], PC, i.Rx, i.i5);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "SAL: " << i_text << std::endl;
-                    }
+                    write_interpretation<SAL>(PC, i);
+                    //std::cout << "SAL: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
                 case SAR:{
                     size_t size = JIT::emmit_SHIFT_OP<PQP::SAR>(i, raw_code);
                     code_block.insert(code_block.end(), raw_code, raw_code + size);
-
-                    if (mapped_instructions.count(PC)) {
-                        mapped_instructions[PC].first += 1;
-                    } else {
-                        std::stringstream s;
-                        s << PRINT_SAR(++pqp_addr_counter[PC], PC, i.Rx, i.i5);
-                        mapped_instructions[PC] = {1, s.str()};
-                        std::string i_text = JIT::to_string(raw_code, size);
-                        std::cout << "SAR: " << i_text << std::endl;
-                    }
+                    write_interpretation<SAR>(PC, i);
+                    //std::cout << "SAR: " << JIT::to_string(raw_code, size) << std::endl;
                     break;
                 }
-            
             }
 
             PC += 4;
@@ -848,14 +756,13 @@ namespace JIT {
             
         };
         block_metadata_table.push_back(meta);
-        //print_memory_dump(executable_memory, executable_memory_index);
         return target_pc_address;
     }
 
     void jit_handler (int sig, siginfo_t* info, void* ctx){
 
         mcontext_t* mcontext = &(((ucontext_t*) ctx)->uc_mcontext);
-        //std::cout << "Valor no xmm2: " << (uint32_t) mcontext->fpregs->_xmm[2].element[0] << std::endl;
+        
 
         uint32_t guestPC = mcontext->fpregs->_xmm[1].element[0];
         uint8_t* trap_address = ((uint8_t*) mcontext->gregs[REG_RIP] - 1);
@@ -866,7 +773,7 @@ namespace JIT {
 
         if (block_map.find(guestPC) == block_map.end()){
             
-            std::cout << "Novo bloco!" << std::endl;
+            //std::cout << "Novo bloco!" << std::endl;
             target_pc_address = interpreter(guestPC);
         }
         else{
@@ -882,17 +789,90 @@ namespace JIT {
 
         mcontext->gregs[REG_RIP] = (greg_t) target_pc_address;
 
-        print_memory_dump(executable_memory, executable_memory_index);
+        //print_memory_dump(executable_memory, executable_memory_index);
 
 
 
     }
 
     void jit_exit (int sig, siginfo_t* info, void* ctx){
-        exit(0);
+        
+        uint32_t counters[256];
+        memset(counters, 0, 256 * sizeof (int));
+
+        for (BlockMeta& blk : block_metadata_table){
+            uint32_t start = blk.guest_pc_start;
+            uint32_t end = start + blk.instruction_count * 4;
+            for (uint32_t i = start; i < end; i+= 4){
+                counters[i] += *blk.counter_ptr;
+            }
+        }
+
+        for (auto& [addr, txt] : mapped_instructions){
+            output_file << LINE_HEADER(counters[addr], addr)
+            << txt << '\n';
+        }
+
+    mcontext_t* mcontext = &((ucontext_t*) ctx)->uc_mcontext;
+    
+    uintptr_t fault_addr = (uintptr_t) info->si_addr;
+    uintptr_t arena_base = (uintptr_t) JIT::pc_constants_arena;
+    uintptr_t mem_base   = (uintptr_t) PQP::pqp_mem;
+
+    uint32_t faulting_guest_pc;
+
+    
+    if (fault_addr >= mem_base && fault_addr < mem_base + 0x10000) {
+        faulting_guest_pc = (uint32_t)(fault_addr - mem_base);
+    } 
+    
+    else {
+        
+        uint32_t offset = (uint32_t)(fault_addr - arena_base); 
+        faulting_guest_pc = offset / 4;
     }
 
-    void set_initial_config (){
+    
+    output_file << "       -:" 
+                << std::hex << std::setfill('0') << std::setw(4) 
+                << (uint16_t) faulting_guest_pc << ":exit\n\n";
+
+    uint32_t final_regs[16];
+    final_regs[0]  = mcontext->gregs[REG_RAX];
+    final_regs[1]  = mcontext->gregs[REG_RCX];
+    final_regs[2]  = mcontext->gregs[REG_RDX];
+    final_regs[3]  = mcontext->gregs[REG_RBX];
+    final_regs[4]  = mcontext->gregs[REG_RSP];
+    final_regs[5]  = mcontext->gregs[REG_RBP];
+    final_regs[6]  = mcontext->gregs[REG_RSI];
+    final_regs[7]  = mcontext->gregs[REG_RDI];
+    final_regs[8]  = mcontext->gregs[REG_R8];
+    final_regs[9]  = mcontext->gregs[REG_R9];
+    final_regs[10] = mcontext->gregs[REG_R10];
+    final_regs[11] = mcontext->gregs[REG_R11];
+    final_regs[12] = mcontext->gregs[REG_R12];
+    final_regs[13] = mcontext->gregs[REG_R13];
+    final_regs[14] = mcontext->gregs[REG_R14];
+    final_regs[15] = mcontext->gregs[REG_R15];
+
+    for (int i = 0; i < 16; i++) {
+        output_file << "r" << std::dec << i << "=" 
+                    << std::hex << std::setfill('0') << std::setw(8) 
+                    << final_regs[i];
+        if (i < 15) output_file << ",";
+    }
+    output_file << "\n";
+
+
+        munmap(executable_memory, 4*1024);
+        munmap(block_counters_arena, 4096);
+        munmap(pc_constants_arena, 4096);
+
+        exit(0);
+
+    }
+
+    static inline void set_initial_config (){
 
         alstack.ss_sp = malloc(SIGSTKSZ);
         alstack.ss_size = SIGSTKSZ;
@@ -907,7 +887,7 @@ namespace JIT {
         sigaction(SIGTRAP, &actionINT, NULL);
 
         actionSEGFAUT.sa_handler = NULL;
-        actionSEGFAUT.sa_sigaction = jit_exit; // Por enquanto segfault intencional
+        actionSEGFAUT.sa_sigaction = jit_exit;
         sigemptyset(&actionSEGFAUT.sa_mask);
         actionSEGFAUT.sa_flags = SA_SIGINFO | SA_ONSTACK;
 
@@ -941,7 +921,7 @@ namespace JIT {
 
     }
 
-    void start_jitting (){
+    static inline void start_jitting (){
 
         JIT::set_initial_config();
         using JIT_FUNC = void (*) (void);
@@ -955,7 +935,7 @@ namespace JIT {
         memcpy(&executable_memory[g1+g2], gen_code, g3);
 
         size_t start = g1 + g2 + g3;
-        print_memory_dump(executable_memory, start);
+        //print_memory_dump(executable_memory, start);
 
         uint8_t zero_regs[] = {
             0x31, 0xC0,             // xor eax, eax
@@ -983,9 +963,9 @@ namespace JIT {
         
         executable_memory_index = start;
 
-        print_memory_dump(executable_memory, start);
+        //print_memory_dump(executable_memory, start);
 
-        std::cout << "Começando JITTING..." << std::endl;
+        //std::cout << "Começando JITTING..." << std::endl;
         f();
 
 
@@ -996,8 +976,7 @@ namespace JIT {
 
 }
 
-std::ifstream input_file;
-std::ofstream output_file;
+
 
 int main (int argc, char* argv[]){
     
@@ -1008,24 +987,6 @@ int main (int argc, char* argv[]){
 
     PQP::load_memory(input_file);
     JIT::start_jitting();
-
-    //JIT::interpreter();
-
-    for (auto& [addr, counter] : PQP::mapped_instructions){
-        if (addr < 256) output_file << LINE_HEADER(counter.first, addr) << counter.second << std::endl;
-        else{
-            output_file << "       -:" << std::hex << std::setfill('0') << std::setw(4) << (uint16_t)addr << ":exit" << std::endl;
-        }
-        
-    }
-
-    output_file << '\n';
-
-    for (int j = 0; j < 15; j++){
-           output_file << PRINT_REG(j) << PQP::pqp_regs[j] << ',';
-       }
-
-       output_file << PRINT_REG(15) << PQP::pqp_regs[15] << std::endl;
 
     return 0;
 }
