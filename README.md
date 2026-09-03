@@ -36,7 +36,7 @@ A tabela abaixo define os *opcodes*, operandos e as operações lógicas/matemá
 | `add rx, ry` | `0x09` | Adição | `rx += ry` | 
 | `sub rx, ry` | `0x0A` | Subtração | `rx -= ry` | 
 | `and rx, ry` | `0x0B` | AND lógico bit a bit | `rx &= ry` | 
-| `or rx, ry` | `0x0C` | OR lógico bit a bit | \\`rx | 
+| `or rx, ry` | `0x0C` | OR lógico bit a bit | `rx |= ry` | 
 | `xor rx, ry` | `0x0D` | XOR lógico bit a bit | `rx ^= ry` | 
 | `sal rx, i5` | `0x0E` | Deslocamento aritmético para a esquerda (*Shift Left*) | `rx <<= i5` | 
 | `sar rx, i5` | `0x0F` | Deslocamento aritmético para a direita (*Shift Right*) | `rx >>= i5` | 
